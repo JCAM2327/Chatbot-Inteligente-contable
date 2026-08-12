@@ -4,8 +4,8 @@
 
 <p align="center">
   <b>Chatbot web en lenguaje natural sobre contabilidad · FastAPI + Pandas</b>
-  Podes probarlo directamente en https://chatbot-inteligente-contable.onrender.com
 </p>
+<p>Podes probarlo directamente en https://chatbot-inteligente-contable.onrender.com (Usar datos de ejemplo)</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
