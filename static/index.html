@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot de Libro Mayor</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema claro/oscuro">🌙</button>
+
+        <div id="landingView">
+            <div class="landing-hero">
+                <div class="hero-icon">📊</div>
+                <h1>Chatbot de Libro Mayor</h1>
+                <p class="hero-subtitle">
+                    Analizá tus datos contables en lenguaje natural. 
+                    Subí tus archivos CSV y el sistema detectará automáticamente 
+                    la estructura, calidad de datos y relaciones entre tablas.
+                </p>
+            </div>
+
+            <div class="upload-section">
+                <div id="uploadZone" class="upload-zone">
+                    <div class="upload-icon">📂</div>
+                    <p class="upload-text">Arrastrá tus archivos CSV o Excel aquí</p>
+                    <p class="upload-hint">o hacé click para seleccionarlos (CSV, XLSX)</p>
+                    <input type="file" id="fileInput" accept=".csv,.xlsx" multiple hidden aria-label="Seleccionar archivos CSV o Excel">
+                </div>
+                <button id="sampleBtn" class="sample-btn" onclick="loadSampleData()" aria-label="Cargar datos de ejemplo">
+                    📁 Usar datos de ejemplo
+                </button>
+                <div id="fileList" class="file-list hidden"></div>
+                <button id="uploadBtn" class="upload-btn hidden" onclick="uploadFiles()" aria-label="Analizar y subir archivos">
+                    📤 Analizar archivos
+                </button>
+            </div>
+
+            <div id="diagnosticSection" class="diagnostic-section hidden">
+                <h2>📋 Diagnóstico ETL</h2>
+                <p class="diag-section-sub">Análisis de estructura, calidad y relaciones entre archivos</p>
+                <div id="diagnosticSummary" class="diag-summary"></div>
+                <div id="diagnosticDetails" class="diag-details"></div>
+                <button id="applyBtn" class="apply-btn hidden" onclick="applyETL()" aria-label="Aplicar correcciones ETL y comenzar">
+                    ✅ Aplicar correcciones y comenzar
+                </button>
+                <div id="landingApplyResult" class="apply-result hidden"></div>
+            </div>
+
+            <div id="loadingOverlay" class="loading-overlay hidden">
+                <div class="spinner"></div>
+                <p id="loadingText">Procesando...</p>
+            </div>
+        </div>
+
+        <div id="mainApp" class="hidden">
+            <div id="viewToggle" class="view-toggle-bar">
+                <button class="view-btn active" data-view="chat" onclick="switchView('chat')" aria-label="Ver chat">💬 Chat</button>
+                <button class="view-btn" data-view="dashboard" onclick="switchView('dashboard')" aria-label="Ver dashboard">📊 Dashboard</button>
+                <button class="view-btn" data-view="modelo" onclick="switchView('modelo')" aria-label="Ver modelo de datos">🔗 Modelo</button>
+                <div class="view-toggle-spacer"></div>
+                <button class="view-btn view-btn-secondary" onclick="resetApp()" aria-label="Cargar nuevos datos">📂 Nuevos datos</button>
+            </div>
+
+            <div id="chatView" class="app-view">
+                <div id="applyResult" class="apply-result apply-result-compact hidden"></div>
+            </div>
+
+            <div id="dashboardView" class="app-view hidden">
+                <div class="dash-filters">
+                    <div class="dash-filter-group">
+                        <label class="dash-filter-label">📅 Año</label>
+                        <div class="dash-filter-slicer" id="yearSlicer"></div>
+                    </div>
+                    <div class="dash-filter-group">
+                        <label class="dash-filter-label">🌍 País</label>
+                        <select id="territorySelect" class="dash-filter-select" onchange="refreshDashboard()">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="dash-main">
+                    <div class="dash-header">
+                        <h2 class="dash-title">📊 Panel General</h2>
+                        <span class="dash-period" id="dashPeriod">General</span>
+                    </div>
+                    <div class="kpi-grid" id="kpiGrid"></div>
+                    <div class="chart-grid" id="chartGrid"></div>
+                    <div class="accounts-section">
+                        <h3 class="section-title">🏦 Top 10 Cuentas</h3>
+                        <div class="table-wrapper">
+                            <table class="accounts-table" id="accountsTable">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Cuenta</th>
+                                        <th>Categoría</th>
+                                        <th>País</th>
+                                        <th>Monto</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="accountsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="modeloView" class="app-view hidden">
+                <div class="modelo-container">
+                    <div class="modelo-title">
+                        <span class="modelo-title-icon">📐</span>
+                        Modelo de Datos
+                    </div>
+                    <div id="modeloSchema" class="modelo-schema"></div>
+                </div>
+            </div>
+
+            <div id="chatBubble" class="chat-bubble" onclick="toggleChat()" role="button" tabindex="0" aria-label="Abrir chat">💬</div>
+            <div id="chatWindow" class="chat-window">
+                <div class="chat-header">
+                    <div class="chat-header-info">
+                        <span class="chat-header-icon">💬</span>
+                        <span>Chatbot GL</span>
+                    </div>
+                    <div class="chat-header-actions">
+                        <button class="chat-action-btn" onclick="toggleSuggestions()" title="Preguntas sugeridas" aria-label="Ver preguntas sugeridas">💡</button>
+                        <button class="chat-action-btn" onclick="toggleChat()" title="Minimizar" aria-label="Minimizar chat">─</button>
+                    </div>
+                </div>
+                <div class="chat-suggestions" id="chatSuggestions">
+                    <div class="suggestions-header">
+                        <span>💡 Preguntas sugeridas</span>
+                        <button class="suggestions-close" onclick="toggleSuggestions()" aria-label="Cerrar sugerencias">✕</button>
+                    </div>
+                    <div class="suggestions-list" id="suggestionsList"></div>
+                </div>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message bot-message">
+                        <div class="message-content">
+                            ¡Hola! Soy tu asistente contable. Los datos están listos. Hacé clic en una sugerencia o escribí tu consulta.
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input-container">
+                    <input type="text" id="userInput" placeholder="Escribí tu consulta..." autocomplete="off" aria-label="Escribir consulta">
+                    <button id="sendBtn" onclick="sendMessage()" aria-label="Enviar mensaje">Enviar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
