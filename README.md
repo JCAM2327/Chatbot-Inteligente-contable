@@ -99,11 +99,9 @@ pregunta y redacta la respuesta de forma natural.
 
 ```
 proyecto/
-├── AGENTS.md               # Guía para el agente de IA
+├── PROMPTS.md              
 ├── README.md
 ├── requirements.txt
-├── LICENSE
-├── .gitignore
 ├── data/
 │   ├── GL.csv              # 27.909 movimientos contables
 │   ├── chart_of_accounts.csv
