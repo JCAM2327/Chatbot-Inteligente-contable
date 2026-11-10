@@ -17,6 +17,9 @@ ENV/
 .env.*
 !.env.example
 
+# Archivos generados
+data/_gl_check.csv
+
 # Sistema e IDE
 .DS_Store
 Thumbs.db
