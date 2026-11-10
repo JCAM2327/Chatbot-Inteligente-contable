@@ -272,6 +272,11 @@ function switchView(view) {
         document.querySelector('.view-btn[data-view="chat"]').classList.add("active");
         chatWindow.classList.add("chat-maximized");
         chatWindow.classList.remove("hidden");
+        chatBubble.classList.add("hidden");
+        if (!chatOpenedFirstTime) {
+            chatOpenedFirstTime = true;
+            renderSuggestions();
+        }
     } else if (view === "dashboard") {
         dashboardView.classList.remove("hidden");
         document.querySelector('.view-btn[data-view="dashboard"]').classList.add("active");
@@ -394,6 +399,22 @@ function renderDashboard(year, territory) {
         });
 }
 
+function getChartTheme() {
+    const styles = getComputedStyle(document.body);
+    const palette = [];
+    for (let i = 1; i <= 8; i++) {
+        const color = styles.getPropertyValue("--chart-" + i).trim();
+        if (color) palette.push(color);
+    }
+    return {
+        palette: palette.length ? palette : ["#5f7f9e", "#8fb9a8", "#d19a94", "#d9b47a", "#a99bc1", "#7fb8b0", "#c9a7a0", "#8b9aae"],
+        text: styles.getPropertyValue("--chart-text").trim() || "#5e6a6f",
+        grid: styles.getPropertyValue("--chart-grid").trim() || "rgba(47,58,63,0.08)",
+        fill: styles.getPropertyValue("--chart-fill").trim() || "rgba(95,127,158,0.12)",
+        card: styles.getPropertyValue("--bg-card").trim() || "#fffdfa"
+    };
+}
+
 function initCharts(charts) {
     // Destroy previous instances
     Object.keys(chartInstances).forEach(function (key) {
@@ -401,23 +422,105 @@ function initCharts(charts) {
     });
     chartInstances = {};
 
-    const colors = ["#3498db", "#2ecc71", "#e74c3c", "#f39c12", "#9b59b6", "#1abc9c", "#e67e22", "#34495e"];
+    const theme = getChartTheme();
+    const colors = theme.palette;
+    const paletteFor = function (count) {
+        const out = [];
+        for (let i = 0; i < count; i++) out.push(colors[i % colors.length]);
+        return out;
+    };
+    const baseOptions = {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+            legend: {
+                display: false,
+                position: "bottom",
+                labels: {
+                    color: theme.text,
+                    boxWidth: 10,
+                    boxHeight: 10,
+                    padding: 10,
+                    font: { size: 10, family: "Manrope" }
+                }
+            }
+        }
+    };
+
     (charts || []).forEach(function (ch, idx) {
         const canvas = document.getElementById("chart-" + idx);
         if (!canvas) return;
         const ctx = canvas.getContext("2d");
-        const config = { type: ch.type, data: { labels: ch.labels, datasets: [] }, options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: ch.type !== "bar", position: "bottom", labels: { boxWidth: 12, padding: 8, font: { size: 10 } } } } } };
+        const config = {
+            type: ch.type,
+            data: { labels: ch.labels, datasets: [] },
+            options: JSON.parse(JSON.stringify(baseOptions))
+        };
 
         if (ch.type === "doughnut") {
-            config.data.datasets = [{ data: ch.values, backgroundColor: colors.slice(0, ch.labels.length), borderWidth: 1 }];
+            config.data.datasets = [{
+                data: ch.values,
+                backgroundColor: paletteFor(ch.labels.length),
+                borderColor: theme.card,
+                borderWidth: 2,
+                hoverOffset: 4
+            }];
+            config.options.plugins.legend.display = true;
         } else if (ch.type === "bar") {
-            config.data.datasets = [{ label: "Monto ($)", data: ch.values, backgroundColor: colors.slice(0, ch.labels.length).map(function (c) { return c + "CC"; }), borderColor: colors.slice(0, ch.labels.length), borderWidth: 1, borderRadius: 4 }];
-            config.options.scales = { y: { beginAtZero: true, ticks: { callback: function (v) { return "$" + v.toLocaleString(); }, font: { size: 9 } } }, x: { ticks: { font: { size: 9 } } } };
-            config.options.plugins.legend.display = false;
+            const barColors = paletteFor(ch.labels.length);
+            config.data.datasets = [{
+                label: "Monto ($)",
+                data: ch.values,
+                backgroundColor: barColors.map(function (c) { return c + "CC"; }),
+                borderColor: barColors,
+                borderWidth: 1,
+                borderRadius: 6,
+                borderSkipped: false
+            }];
+            config.options.scales = {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: theme.grid, drawBorder: false },
+                    ticks: {
+                        color: theme.text,
+                        callback: function (v) { return "$" + v.toLocaleString(); },
+                        font: { size: 9, family: "Manrope" }
+                    }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { color: theme.text, font: { size: 9, family: "Manrope" } }
+                }
+            };
         } else if (ch.type === "line") {
-            config.data.datasets = [{ label: "Monto ($)", data: ch.values, borderColor: "#3498db", backgroundColor: "rgba(52,152,219,0.1)", fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: "#3498db" }];
-            config.options.scales = { y: { beginAtZero: true, ticks: { callback: function (v) { return "$" + v.toLocaleString(); }, font: { size: 9 } } }, x: { ticks: { font: { size: 8 }, maxTicksLimit: 10 } } };
-            config.options.plugins.legend.display = false;
+            config.data.datasets = [{
+                label: "Monto ($)",
+                data: ch.values,
+                borderColor: colors[0],
+                backgroundColor: theme.fill,
+                fill: true,
+                tension: 0.35,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                pointBackgroundColor: colors[0],
+                pointBorderColor: theme.card,
+                pointBorderWidth: 2
+            }];
+            config.options.scales = {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: theme.grid, drawBorder: false },
+                    ticks: {
+                        color: theme.text,
+                        callback: function (v) { return "$" + v.toLocaleString(); },
+                        font: { size: 9, family: "Manrope" }
+                    }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { color: theme.text, font: { size: 8, family: "Manrope" }, maxTicksLimit: 10 }
+                }
+            };
         }
 
         try {
@@ -641,7 +744,7 @@ function renderModelViewer() {
             const relaciones = data.relaciones || [];
             if (tablas.length === 0) { container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px">No hay datos del modelo</div>'; return; }
 
-            const colors = ["#3498db", "#2ecc71", "#e74c3c", "#f39c12"];
+            const colors = ["#486984", "#4b765d", "#9f4f49", "#8f5d25"];
             let tableCards = "";
             tablas.forEach(function (t, idx) {
                 const cols = columnasPorTabla[t] || [];
@@ -682,19 +785,35 @@ function renderModelViewer() {
 
 // ── Theme ──────────────────────────────────────
 
+function setThemeColor(isDark) {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = isDark ? "#14181b" : "#f6f4ef";
+}
+
 function toggleTheme() {
     const body = document.body;
     const btn = document.getElementById("themeToggle");
     body.classList.toggle("dark-mode");
-    btn.textContent = body.classList.contains("dark-mode") ? "☀️" : "🌙";
-    localStorage.setItem("gl-theme", body.classList.contains("dark-mode") ? "dark" : "light");
+    const isDark = body.classList.contains("dark-mode");
+    btn.textContent = isDark ? "☀️" : "🌙";
+    localStorage.setItem("gl-theme", isDark ? "dark" : "light");
+    setThemeColor(isDark);
+    if (Object.keys(chartInstances).length > 0) {
+        renderDashboard(currentYear, currentTerritory);
+    }
 }
 
 function loadTheme() {
     const saved = localStorage.getItem("gl-theme");
     const btn = document.getElementById("themeToggle");
-    if (saved === "dark") { document.body.classList.add("dark-mode"); btn.textContent = "☀️"; }
-    else { btn.textContent = "🌙"; }
+    if (saved === "dark") {
+        document.body.classList.add("dark-mode");
+        btn.textContent = "☀️";
+        setThemeColor(true);
+    } else {
+        btn.textContent = "🌙";
+        setThemeColor(false);
+    }
 }
 
 document.addEventListener("DOMContentLoaded", function () {

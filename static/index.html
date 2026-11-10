@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chatbot de Libro Mayor</title>
+    <title>Chatbot de Libro Mayor · Análisis contable</title>
+    <meta name="theme-color" content="#f6f4ef">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8A%3C/text%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
@@ -13,16 +18,32 @@
 
         <div id="landingView">
             <div class="landing-hero">
-                <div class="hero-icon">📊</div>
+                <div class="hero-eyebrow">
+                    <span class="hero-eyebrow-dot"></span>
+                    Análisis contable asistido por IA
+                </div>
+                <div class="hero-icon" aria-hidden="true">📊</div>
                 <h1>Chatbot de Libro Mayor</h1>
                 <p class="hero-subtitle">
-                    Analizá tus datos contables en lenguaje natural. 
-                    Subí tus archivos CSV y el sistema detectará automáticamente 
+                    Analizá tus datos contables en lenguaje natural.
+                    Subí tus archivos CSV y el sistema detectará automáticamente
                     la estructura, calidad de datos y relaciones entre tablas.
                 </p>
+                <div class="hero-features" aria-label="Funciones principales">
+                    <span class="hero-feature"><span class="hero-feature-icon">✦</span>Diagnóstico automático</span>
+                    <span class="hero-feature"><span class="hero-feature-icon">✦</span>Dashboard interactivo</span>
+                    <span class="hero-feature"><span class="hero-feature-icon">✦</span>Consultas en lenguaje natural</span>
+                </div>
             </div>
 
             <div class="upload-section">
+                <div class="upload-section-head">
+                    <div>
+                        <h2 class="upload-section-title">Empezá con tus archivos</h2>
+                        <p class="upload-section-sub">Detección automática de estructura, calidad y relaciones.</p>
+                    </div>
+                    <span class="upload-format-badge">CSV · XLSX</span>
+                </div>
                 <div id="uploadZone" class="upload-zone">
                     <div class="upload-icon">📂</div>
                     <p class="upload-text">Arrastrá tus archivos CSV o Excel aquí</p>
@@ -123,7 +144,10 @@
                 <div class="chat-header">
                     <div class="chat-header-info">
                         <span class="chat-header-icon">💬</span>
-                        <span>Chatbot GL</span>
+                        <span class="chat-header-text">
+                            <span class="chat-header-title">Chatbot GL</span>
+                            <span class="chat-header-status"><span class="status-dot"></span>Datos listos</span>
+                        </span>
                     </div>
                     <div class="chat-header-actions">
                         <button class="chat-action-btn" onclick="toggleSuggestions()" title="Preguntas sugeridas" aria-label="Ver preguntas sugeridas">💡</button>
