@@ -14,6 +14,8 @@ from app.data_processing import (
     get_cuenta_mayor_monto,
     get_info_etl,
     get_resumen,
+    get_resumen_general,
+    get_dashboard_data,
 )
 
 
@@ -28,6 +30,15 @@ class TestParseAmount:
 
     def test_comma_separated(self):
         assert _parse_amount("2,394") == 2394.0
+
+    def test_european_decimal(self):
+        assert _parse_amount("1.234,56") == 1234.56
+
+    def test_currency_and_thousands(self):
+        assert _parse_amount("$1,234.56") == 1234.56
+
+    def test_negative_with_currency(self):
+        assert _parse_amount("$-1,234") == -1234.0
 
     def test_whitespace_stripped(self):
         assert _parse_amount("  500  ") == 500.0
@@ -115,6 +126,16 @@ class TestMergeTables:
         df, _ = merge_tables(sample_gl, sample_coa, pd.DataFrame({"Territory_key": [], "Country": []}), pd.DataFrame())
         assert "Amount_abs" in df.columns
         assert (df["Amount_abs"] >= 0).all()
+
+    def test_merge_without_auxiliary_tables(self, sample_gl):
+        df, merges = merge_tables(sample_gl)
+        assert merges == []
+        assert "Amount_abs" in df.columns
+
+    def test_merge_gl_and_coa_without_territory_or_calendar(self, sample_gl, sample_coa):
+        df, merges = merge_tables(sample_gl, sample_coa)
+        assert "SubClass" in df.columns
+        assert len(merges) == 1
 
 
 # ── Query functions ──────────────────────────────────────
@@ -215,6 +236,27 @@ class TestGetResumen:
         result = get_resumen(df)
         assert "total_registros" in result
         assert result["total_registros"] > 0
+
+
+class TestAccountingSemantics:
+    def test_resumen_net_uses_profit_and_loss(self, sample_gl, sample_coa):
+        merged, _ = merge_tables(sample_gl, sample_coa)
+        result = get_resumen_general(merged)
+        assert "Resultado neto: $3,700.00" in result["answer"]
+        assert "Gastos operativos: $1,000.00" in result["answer"]
+
+    def test_dashboard_result_uses_profit_and_loss(self, sample_gl, sample_coa):
+        merged, _ = merge_tables(sample_gl, sample_coa)
+        dash = get_dashboard_data(merged)
+        kpis = {k["label"]: k for k in dash["kpis"]}
+        assert kpis["Resultado"]["raw"] == 3700.0
+        assert kpis["Gastos"]["value"] == "$1,000.00"
+
+    def test_dashboard_works_without_country_column(self, sample_gl, sample_coa):
+        merged, _ = merge_tables(sample_gl, sample_coa)
+        assert "Country" not in merged.columns
+        dash = get_dashboard_data(merged)
+        assert "top_accounts" in dash
 
 
 # ── load_data (integration) ─────────────────────────────

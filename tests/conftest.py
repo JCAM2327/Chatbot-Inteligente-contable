@@ -24,6 +24,12 @@ from app.data_processing import (
 from app.intent import _normalize, detectar_intencion, extract_year
 
 
+@pytest.fixture
+def anyio_backend():
+    """FastAPI y httpx usan asyncio; no exigir trio en el entorno de tests."""
+    return "asyncio"
+
+
 # ── Shared fixtures ─────────────────────────────────────
 
 @pytest.fixture(scope="session")

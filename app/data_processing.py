@@ -16,17 +16,34 @@ REQUIRED_GL_COLUMNS = {"EntryNo", "Date", "Territory_key", "Account_key", "Amoun
 
 def _parse_amount(value) -> float:
     """
-    Convierte formato contable a float.
+    Convierte formatos contables habituales a float.
+
     '(884)' → -884.0
     '2,394 ' → 2394.0
+    '$1.234,56' → 1234.56
+    '1,234.56' → 1234.56
     """
     if pd.isna(value):
         return 0.0
     s = str(value).strip()
     if not s:
         return 0.0
-    negative = s.startswith("(") and s.endswith(")")
-    s = s.strip("() ").replace(",", "")
+
+    s = s.replace("$", "").replace(" ", "")
+    negative = (s.startswith("(") and s.endswith(")")) or s.startswith("-")
+    s = s.strip("() ").replace("-", "")
+    if not s:
+        return 0.0
+
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s:
+        decimales = s.rsplit(",", 1)[1]
+        s = s.replace(",", ".") if len(decimales) == 2 else s.replace(",", "")
+
     try:
         num = float(s)
         return -num if negative else num
@@ -80,13 +97,20 @@ def clean_gl(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         etl["pasos"].append("Convertir Amount de formato contable a float")
         etl["tipos_convertidos"].append({"columna": "Amount", "antes": "string", "despues": "float"})
         etl["ejemplos_transformacion"].append({"columna": "Amount", "antes": ejemplo_antes, "despues": ejemplo_despues})
+        df["Amount_abs"] = df["Amount"].abs()
+        etl["pasos"].append("Crear Amount_abs = Amount.abs()")
+        etl["columnas_calculadas"] = ["Amount_abs = Amount.abs()"]
 
-    # 4. Parsear Date
+    # 4. Parsear Date (primero el formato esperado; fallback para otros formatos)
     if "Date" in df.columns:
         ejemplo_antes = str(df["Date"].dropna().iloc[0]) if len(df) > 0 else "N/A"
-        df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%y", errors="coerce")
+        parsed = pd.to_datetime(df["Date"], format="%m/%d/%y", errors="coerce")
+        if parsed.isna().any():
+            fallback = pd.to_datetime(df["Date"], format="mixed", errors="coerce")
+            parsed = parsed.fillna(fallback)
+        df["Date"] = parsed
         ejemplo_despues = str(df["Date"].iloc[0]) if len(df) > 0 else "N/A"
-        etl["pasos"].append("Convertir Date de 'MM/DD/YY' a datetime")
+        etl["pasos"].append("Convertir Date a datetime (MM/DD/YY y formatos mixtos)")
         etl["tipos_convertidos"].append({"columna": "Date", "antes": "string", "despues": "datetime"})
         etl["ejemplos_transformacion"].append({"columna": "Date", "antes": ejemplo_antes, "despues": ejemplo_despues})
 
@@ -119,38 +143,45 @@ def clean_gl(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return df, etl
 
 
-def merge_tables(gl, coa, terr, cal) -> tuple[pd.DataFrame, list]:
-    """Merge GL con chart_of_accounts, territory y calendar."""
+def merge_tables(gl, coa=None, terr=None, cal=None) -> tuple[pd.DataFrame, list]:
+    """Merge GL con las tablas opcionales que estén disponibles."""
     merges = []
+    df = gl.copy()
 
     # Merge GL ━━🔗━━ chart_of_accounts
-    df = pd.merge(
-        gl, coa, on="Account_key", how="left",
-        validate="m:1", indicator=True,
-    )
-    merges.append({
-        "from": "GL", "to": "chart_of_accounts",
-        "column": "Account_key", "filas": len(df),
-        "unmatched": int((df["_merge"] != "both").sum()),
-    })
-    df.drop(columns=["_merge"], inplace=True)
+    if coa is not None and not coa.empty and "Account_key" in df.columns and "Account_key" in coa.columns:
+        df = pd.merge(
+            df, coa, on="Account_key", how="left",
+            validate="m:1", indicator=True,
+        )
+        merges.append({
+            "from": "GL", "to": "chart_of_accounts",
+            "column": "Account_key", "filas": len(df),
+            "unmatched": int((df["_merge"] != "both").sum()),
+        })
+        df.drop(columns=["_merge"], inplace=True)
 
     # Merge GL ━━🔗━━ territory
-    df = pd.merge(
-        df, terr, on="Territory_key", how="left",
-        validate="m:1", indicator=True,
-    )
-    merges.append({
-        "from": "GL", "to": "territory",
-        "column": "Territory_key", "filas": len(df),
-        "unmatched": int((df["_merge"] != "both").sum()),
-    })
-    df.drop(columns=["_merge"], inplace=True)
+    if terr is not None and not terr.empty and "Territory_key" in df.columns and "Territory_key" in terr.columns:
+        df = pd.merge(
+            df, terr, on="Territory_key", how="left",
+            validate="m:1", indicator=True,
+        )
+        merges.append({
+            "from": "GL", "to": "territory",
+            "column": "Territory_key", "filas": len(df),
+            "unmatched": int((df["_merge"] != "both").sum()),
+        })
+        df.drop(columns=["_merge"], inplace=True)
 
     # Merge GL ━━🔗━━ calendar (sin validate m:1 porque fechas NaT se duplican)
-    if "Date" in df.columns and "Date" in cal.columns:
+    if cal is not None and not cal.empty and "Date" in df.columns and "Date" in cal.columns:
         cal_copy = cal.copy()
-        cal_copy["Date"] = pd.to_datetime(cal_copy["Date"], format="%m/%d/%y", errors="coerce")
+        parsed = pd.to_datetime(cal_copy["Date"], format="%m/%d/%y", errors="coerce")
+        if parsed.isna().any():
+            fallback = pd.to_datetime(cal_copy["Date"], format="mixed", errors="coerce")
+            parsed = parsed.fillna(fallback)
+        cal_copy["Date"] = parsed
         df = pd.merge(
             df, cal_copy, on="Date", how="left",
             indicator=True,
@@ -431,9 +462,12 @@ def get_resumen_general(df) -> dict:
     if "SubClass" in df.columns:
         sales = df.loc[df["SubClass"] == "Sales", "Amount"].sum()
         expenses = df.loc[df["SubClass"] == "Operating Expenses", "Amount"].sum()
-        neto = sales + expenses
+        if "Report" in df.columns:
+            neto = df.loc[df["Report"] == "Profit and Loss", "Amount"].sum()
+        else:
+            neto = sales + expenses
         lineas.append(f"• Ventas totales: ${sales:,.2f}")
-        lineas.append(f"• Gastos totales: ${expenses:,.2f}")
+        lineas.append(f"• Gastos operativos: ${abs(expenses):,.2f}")
         lineas.append(f"• Resultado neto: ${neto:,.2f}")
     return {
         "answer": "\n".join(lineas),
@@ -777,9 +811,12 @@ def get_dashboard_data(df, year=None, territorio=None) -> dict:
         gastos_cond = subset["SubClass"] == "Operating Expenses"
         ventas_raw = round(subset.loc[ventas_cond, "Amount"].sum(), 2) if "Amount" in subset.columns else 0
         gastos_raw = round(subset.loc[gastos_cond, "Amount"].sum(), 2) if "Amount" in subset.columns else 0
-        neto_raw = round(ventas_raw + gastos_raw, 2) if "Amount" in subset.columns else 0
+        if "Report" in subset.columns:
+            neto_raw = round(subset.loc[subset["Report"] == "Profit and Loss", "Amount"].sum(), 2)
+        else:
+            neto_raw = round(ventas_raw + gastos_raw, 2)
         kpis.append({"label": "Ventas", "value": f"${ventas_raw:,.2f}", "icon": "💰", "raw": ventas_raw})
-        kpis.append({"label": "Gastos", "value": f"${gastos_raw:,.2f}", "icon": "💸", "raw": gastos_raw})
+        kpis.append({"label": "Gastos", "value": f"${abs(gastos_raw):,.2f}", "icon": "💸", "raw": gastos_raw})
         kpis.append({"label": "Resultado", "value": f"${neto_raw:,.2f}", "icon": "✅" if neto_raw >= 0 else "❌",
                       "raw": neto_raw, "color": "green" if neto_raw >= 0 else "red"})
         top_pais_df = subset.groupby("Country", observed=True)["Amount_abs"].sum().reset_index() if "Country" in subset.columns and "Amount_abs" in subset.columns else None
@@ -806,9 +843,12 @@ def get_dashboard_data(df, year=None, territorio=None) -> dict:
                     elif kpi["label"] == "Gastos":
                         prev_val = round(prev.loc[prev["SubClass"] == "Operating Expenses", "Amount"].sum(), 2)
                     elif kpi["label"] == "Resultado":
-                        pv = round(prev.loc[prev["SubClass"] == "Sales", "Amount"].sum(), 2)
-                        pg = round(prev.loc[prev["SubClass"] == "Operating Expenses", "Amount"].sum(), 2)
-                        prev_val = pv + pg
+                        if "Report" in prev.columns:
+                            prev_val = round(prev.loc[prev["Report"] == "Profit and Loss", "Amount"].sum(), 2)
+                        else:
+                            pv = round(prev.loc[prev["SubClass"] == "Sales", "Amount"].sum(), 2)
+                            pg = round(prev.loc[prev["SubClass"] == "Operating Expenses", "Amount"].sum(), 2)
+                            prev_val = pv + pg
                     else:
                         prev_val = len(prev)
                     diff = kpi["raw"] - prev_val
@@ -851,7 +891,8 @@ def get_dashboard_data(df, year=None, territorio=None) -> dict:
     # Top accounts table
     top_accounts = []
     if "SubAccount" in subset.columns and "Amount_abs" in subset.columns:
-        grouped = subset.groupby(["SubAccount", "SubClass", "Country"], observed=True)["Amount_abs"].sum().reset_index()
+        group_cols = [c for c in ["SubAccount", "SubClass", "Country"] if c in subset.columns]
+        grouped = subset.groupby(group_cols, observed=True)["Amount_abs"].sum().reset_index()
         grouped = grouped.sort_values("Amount_abs", ascending=False).head(10)
         top_accounts = grouped.to_dict("records")
         for r in top_accounts:

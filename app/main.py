@@ -26,6 +26,11 @@ from app.constants import NOMBRE_MES, MESES_EN
 
 logger = logging.getLogger(__name__)
 
+MAX_UPLOAD_FILES = 5
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_UPLOAD_ROWS = 50_000
+MAX_UPLOAD_COLUMNS = 100
+
 
 @dataclass
 class AppState:
@@ -127,7 +132,17 @@ class DashboardResponse(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "data_source": state.get("data_source", "none")}
+    """Comprueba que el módulo de chat y el estado de datos estén operativos."""
+    try:
+        from app.ai_formatter import redactar_respuesta  # noqa: F401
+    except Exception as e:
+        logger.error("Healthcheck: ai_formatter no disponible: %s", e)
+        raise HTTPException(status_code=503, detail="Módulo de chat no disponible")
+    return {
+        "status": "ok",
+        "data_source": state.get("data_source", "none"),
+        "chat_ready": state.get("df") is not None,
+    }
 
 @app.get("/resumen")
 def resumen():
@@ -156,6 +171,11 @@ def upload_files(files: list[UploadFile] = File(...)):
     """Recibe múltiples CSVs, los analiza y devuelve diagnóstico."""
     if not files:
         raise HTTPException(status_code=400, detail="No se enviaron archivos")
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Máximo {MAX_UPLOAD_FILES} archivos por carga.",
+        )
 
     print(f"[UPLOAD] Recibidos {len(files)} archivos")
     parsed: dict[str, pd.DataFrame] = {}
@@ -164,13 +184,34 @@ def upload_files(files: list[UploadFile] = File(...)):
     for f in files:
         try:
             fname = f.filename or "unknown.csv"
+            if not fname.lower().endswith((".csv", ".xlsx")):
+                errors.append({"file": fname, "error": "Formato no soportado. Usá CSV o XLSX."})
+                continue
             print(f"[UPLOAD] Leyendo archivo: {fname}")
-            content = f.file.read()
+            content = f.file.read(MAX_UPLOAD_BYTES + 1)
             print(f"[UPLOAD] Leidos {len(content)} bytes")
+            if len(content) > MAX_UPLOAD_BYTES:
+                errors.append({
+                    "file": fname,
+                    "error": f"Archivo demasiado grande (máximo {MAX_UPLOAD_BYTES // (1024 * 1024)} MB).",
+                })
+                continue
             if fname.lower().endswith(".xlsx"):
-                df = pd.read_excel(io.BytesIO(content), engine="openpyxl")
+                df = pd.read_excel(io.BytesIO(content), engine="openpyxl", nrows=MAX_UPLOAD_ROWS + 1)
             else:
-                df = pd.read_csv(io.BytesIO(content))
+                df = pd.read_csv(io.BytesIO(content), nrows=MAX_UPLOAD_ROWS + 1)
+            if len(df) > MAX_UPLOAD_ROWS:
+                errors.append({
+                    "file": fname,
+                    "error": f"El archivo supera el límite de {MAX_UPLOAD_ROWS:,} filas.",
+                })
+                continue
+            if len(df.columns) > MAX_UPLOAD_COLUMNS:
+                errors.append({
+                    "file": fname,
+                    "error": f"El archivo supera el límite de {MAX_UPLOAD_COLUMNS} columnas.",
+                })
+                continue
             print(f"[UPLOAD] Parseado: {df.shape}")
             parsed[fname] = df
         except Exception as e:
@@ -307,22 +348,35 @@ def apply_etl():
         gl_raw = raw[gl_file]
         gl_clean, etl_stats = clean_gl(gl_raw)
 
-        # Si hay COA, territory, calendar, mergearlos
-        df = gl_clean
-        merges = []
+        # Mergear solo las tablas auxiliares disponibles.
+        coa_df = raw.get(coa_file) if coa_file else None
+        terr_df = raw.get(terr_file) if terr_file else None
+        cal_df = raw.get(cal_file) if cal_file else None
+
         dfs = {"GL": gl_clean}
-
-        if coa_file:
-            coa_df = raw[coa_file]
+        if coa_df is not None:
             dfs["chart_of_accounts"] = coa_df
-            df, merges = merge_tables(
-                gl_clean, coa_df,
-                raw.get(terr_file, pd.DataFrame()),
-                raw.get(cal_file, pd.DataFrame()),
-            )
-            etl_stats["merges"] = merges
+        if terr_df is not None:
+            dfs["territory"] = terr_df
+        if cal_df is not None:
+            dfs["calendar"] = cal_df
 
-        state.update(df=df, etl_stats=etl_stats, merges=merges, data_source="upload", raw_files={}, dashboard_cache={})
+        if any(table is not None for table in (coa_df, terr_df, cal_df)):
+            df, merges = merge_tables(gl_clean, coa_df, terr_df, cal_df)
+        else:
+            df, merges = gl_clean, []
+        etl_stats["merges"] = merges
+        modelo = detectar_relaciones(dfs)
+
+        state.update(
+            df=df,
+            etl_stats=etl_stats,
+            merges=merges,
+            modelo=modelo,
+            data_source="upload",
+            raw_files={},
+            dashboard_cache={},
+        )
 
         return {
             "status": "ok",
@@ -368,6 +422,7 @@ def chat(request: QueryRequest):
             )
 
         extra = {}
+        ia_free_attempted = False
 
         if intent == "ventas":
             result = _safe_query(df, get_total_ventas, year)
@@ -491,6 +546,7 @@ def chat(request: QueryRequest):
                 f"{df['SubAccount'].nunique() if 'SubAccount' in df.columns else '?'} cuentas."
             )
             from app.ai_formatter import redactar_respuesta
+            ia_free_attempted = True
             texto_ia, ia_used = redactar_respuesta(contexto, question, modo="free")
             if ia_used:
                 result = {"answer": texto_ia + '\n\n<sup style="color:var(--accent)">✨ IA</sup>', "labels": [], "values": []}
@@ -514,12 +570,13 @@ def chat(request: QueryRequest):
                     "  • Relaciones entre tablas (ej: '¿Cómo se conectan las tablas?')"
                 ), "labels": [], "values": []}
 
-        from app.ai_formatter import redactar_respuesta
-        respuesta_ia, ia_used = redactar_respuesta(result["answer"], question)
-        if ia_used:
-            result["answer"] = respuesta_ia + '\n\n<sup style="color:var(--accent)">✨ IA</sup>'
-        else:
-            result["answer"] = respuesta_ia
+        if not ia_free_attempted:
+            from app.ai_formatter import redactar_respuesta
+            respuesta_ia, ia_used = redactar_respuesta(result["answer"], question)
+            if ia_used:
+                result["answer"] = respuesta_ia + '\n\n<sup style="color:var(--accent)">✨ IA</sup>'
+            else:
+                result["answer"] = respuesta_ia
 
         return ChatResponse(
             answer=result["answer"],

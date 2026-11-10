@@ -11,14 +11,16 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/FastAPI-0.104%2B-green" alt="FastAPI">
   <img src="https://img.shields.io/badge/pandas-2.1%2B-orange" alt="Pandas">
-  <img src="https://img.shields.io/badge/tests-77%20passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT License">
+  <img src="https://img.shields.io/badge/tests-85%20passing-brightgreen" alt="Tests">
 </p>
 
 Chatbot web que responde preguntas en lenguaje natural sobre un libro mayor
 contable (dataset [General Ledger de Kaggle](https://www.kaggle.com/datasets/irfansharif/generalledger)).
 Los cálculos se hacen siempre con **Python/Pandas**; el chatbot interpreta la
 pregunta y redacta la respuesta de forma natural.
+
+> **Demo académica:** usa datos ficticios y un único estado en memoria. No subir
+> información real, confidencial ni datos personales.
 
 ---
 
@@ -36,7 +38,7 @@ pregunta y redacta la respuesta de forma natural.
 - Lista de relaciones con flechas ⟷ entre tablas
 - Columnas detalladas por tabla
 
-### 💬 Chatbot (15 intenciones)
+### 💬 Chatbot (16 intenciones)
 | Intención | Ejemplo |
 |---|---|
 | Ventas | "¿Cuánto se vendió en 2019?" |
@@ -54,7 +56,7 @@ pregunta y redacta la respuesta de forma natural.
 | Predicción | "Predecí la tendencia futura" |
 | ETL | "¿Qué limpieza se hizo?" |
 | Relaciones | "¿Cómo se conectan las tablas?" |
-| Comparativa | "Compará ventas entre países" |
+| Comparativa | "Compará ventas 2019 vs 2020" |
 
 ### 📊 Dashboard estilo Power BI
 - KPIs interactivos con variación vs año anterior
@@ -96,6 +98,16 @@ pregunta y redacta la respuesta de forma natural.
 
 ---
 
+## ⚠️ Alcance y limitaciones
+
+- Es una demo académica, no un sistema contable de producción.
+- El estado es global y en memoria: una carga de archivos reemplaza los datos de la sesión.
+- No se deben subir datos reales, confidenciales o personales.
+- La demo pública está pensada para una sola persona a la vez; no implementa autenticación ni sesiones aisladas.
+- Las respuestas con IA son opcionales y solo redactan; los cálculos siempre los hace Pandas.
+
+---
+
 ## 🗂️ Estructura del proyecto
 
 ```
@@ -103,6 +115,8 @@ proyecto/
 ├── PROMPTS.md              
 ├── README.md
 ├── requirements.txt
+├── requirements-dev.txt
+├── .env.example
 ├── data/
 │   ├── GL.csv              # 27.909 movimientos contables
 │   ├── chart_of_accounts.csv
@@ -134,8 +148,8 @@ proyecto/
 
 ```bash
 # Clonar el repositorio
-git clone https://github.com/tu-usuario/chatbot-gl.git
-cd chatbot-gl
+git clone https://github.com/JCAM2327/Chatbot-Inteligente-contable.git
+cd Chatbot-Inteligente-contable
 
 # Crear entorno virtual
 python -m venv venv
@@ -147,6 +161,9 @@ venv\Scripts\activate
 
 # Instalar dependencias
 pip install -r requirements.txt
+
+# Opcional: dependencias para tests
+pip install -r requirements-dev.txt
 ```
 
 ## ▶️ Ejecución
@@ -165,7 +182,7 @@ Abrir [http://127.0.0.1:8000](http://127.0.0.1:8000) en el navegador.
 pytest tests/ -v
 ```
 
-77 tests que cubren: parseo de montos, limpieza ETL, merges, funciones de consulta, detección de intención, extracción de año, endpoints de la API, despliegue de signos correctos y respuestas formateadas.
+85 tests que cubren: parseo de montos, limpieza ETL, merges, funciones de consulta, detección de intención, extracción de año, endpoints de la API, despliegue de signos correctos y respuestas formateadas. Para ejecutarlos, instalá `requirements-dev.txt`.
 
 ---
 
@@ -193,7 +210,7 @@ Fuente: Excel original de Kaggle exportado a 4 CSV.
 | Archivo | Filas | Columnas |
 |---|---|---|
 | `GL.csv` | 27.909 | `EntryNo, Date, Territory_key, Account_key, Details, Amount` |
-| `chart_of_accounts.csv` | 62 | `Account_key, Report, Class, SubClass, SubClass2, Account, SubAccount` |
+| `chart_of_accounts.csv` | 54 | `Account_key, Report, Class, SubClass, SubClass2, Account, SubAccount` |
 | `territory.csv` | 7 | `Territory_key, Country, Region` |
 | `calendar.csv` | 1.096 | `Date, Year, Quarter, Month, Day` |
 
@@ -203,16 +220,21 @@ Fuente: Excel original de Kaggle exportado a 4 CSV.
 
 ## 🤖 Configuración de IA (bonus opcional)
 
-El proyecto incluye un formateador opcional de respuestas usando IA (Gemini, Groq o OpenRouter).
+El proyecto incluye un formateador opcional de respuestas usando IA (Gemini o Groq).
 No requiere configuración para funcionar: con `USE_AI_FORMATTER=false` (default) el chatbot responde
 con texto generado por reglas.
 
-Si se desea activar, crear `.env`:
+Si se desea activar, copiar `.env.example` a `.env` y completar la clave:
 
 ```env
-AI_API_KEY=AIzaSy...
+GEMINI_API_KEY=AIzaSy...
 USE_AI_FORMATTER=true
+# Opcional para Groq:
+# AI_API_URL=https://api.groq.com/openai/v1/chat/completions
 ```
+
+En Render o cualquier servicio de despliegue, configurar las mismas variables de entorno.
+No es necesario crear `.env` en producción.
 
 > **Nota:** la IA solo redacta respuestas en lenguaje natural. TODOS los cálculos son realizados por Python/Pandas. Sin API key funcional el chatbot opera completo sin IA.
 
@@ -242,15 +264,21 @@ USE_AI_FORMATTER=true
 
 ---
 
-## 📄 Licencia
+## 📄 Licencia y autoría
 
-Distribuido bajo licencia MIT. Ver `LICENSE` para más información.
+Este repositorio es un fork de
+[jorgedalcaraz-lgtm/Automatizaci-n-y-Consulta-de-Datos-Contables-mediante-Chatbot-Inteligente](https://github.com/jorgedalcaraz-lgtm/Automatizaci-n-y-Consulta-de-Datos-Contables-mediante-Chatbot-Inteligente).
+Los commits iniciales y la base del proyecto corresponden a **Jorge Darío Alcaraz**.
+
+No se declara una licencia definitiva mientras no se aclaren los derechos con el
+autor original. Por eso este README no incluye un badge MIT ni un archivo `LICENSE`
+hasta contar con autorización explícita.
 
 ---
 
 ## 👤 Créditos
 
+- **Proyecto base:** Jorge Darío Alcaraz
 - **Dataset:** [General Ledger — Kaggle, irfansharif](https://www.kaggle.com/datasets/irfansharif/generalledger)
 - **Desarrollado con:** FastAPI + Pandas + Chart.js + OpenCode
 - **Documentación de prompts:** [PROMPTS.md](./PROMPTS.md)
-- **Presentación:** [Presentacion_Trabajo_Practico_Integrador.pptx](./Presentacion_Trabajo_Practico_Integrador.pptx)

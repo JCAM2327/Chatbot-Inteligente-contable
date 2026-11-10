@@ -10,8 +10,12 @@ __all__ = ["redactar_respuesta", "formatear_con_ia", "cargar_env"]
 MODELO_GEMINI = "gemini-2.0-flash"
 
 
-def cargar_env() -> Path:
-    """Busca .env desde el directorio del script hacia arriba (hasta 6 niveles)."""
+def cargar_env() -> Path | None:
+    """Carga .env si existe; si no, usa las variables del proceso.
+
+    Render y otros servicios definen las variables de entorno directamente,
+    por lo que la ausencia de .env no debe impedir arrancar la aplicación.
+    """
     script_dir = Path(__file__).resolve().parent
     env_path = script_dir
     for _ in range(6):
@@ -21,12 +25,8 @@ def cargar_env() -> Path:
             logger.info(".env cargado desde: %s", candidate)
             return candidate
         env_path = env_path.parent
-    raise FileNotFoundError(
-        "No se encontro .env. Asegurate de tener un archivo .env en la raiz del proyecto."
-    )
-
-
-cargar_env()
+    logger.info("Sin archivo .env; se usan variables de entorno del proceso")
+    return None
 
 
 def validar_clave() -> str:
@@ -34,8 +34,9 @@ def validar_clave() -> str:
     api_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("AI_API_KEY", "")
     if not api_key:
         raise ValueError(
-            "GEMINI_API_KEY no esta definida en el .env. "
-            "Copia tu clave de Google AI Studio al archivo .env."
+            "GEMINI_API_KEY no esta definida. "
+            "Copia tu clave de Google AI Studio en el archivo .env "
+            "o configúrala como variable de entorno."
         )
     if api_key.startswith("AQ."):
         logger.info("Clave Gemini (formato AQ.) cargada correctamente")
@@ -118,6 +119,7 @@ def redactar_respuesta(texto_original: str, pregunta: str, modo: str = "reformat
     modo="reformat": reescribe datos numéricos en lenguaje natural.
     modo="free": charla libre, responde cualquier pregunta con ayuda del contexto.
     """
+    cargar_env()
     if os.getenv("USE_AI_FORMATTER", "").lower() != "true":
         return texto_original, False
 
